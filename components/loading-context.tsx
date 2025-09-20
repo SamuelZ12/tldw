@@ -3,7 +3,7 @@
 import { VideoInfo } from "@/lib/types";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Clock, User, FileText } from "lucide-react";
+import { Clock, User } from "lucide-react";
 
 interface LoadingContextProps {
   videoInfo?: VideoInfo | null;
@@ -19,19 +19,19 @@ export function LoadingContext({ videoInfo, preview }: LoadingContextProps) {
           <div className="flex gap-6">
             {/* Thumbnail */}
             <div className="flex-shrink-0">
-              <img 
-                src={videoInfo.thumbnail} 
+              <img
+                src={videoInfo.thumbnail}
                 alt={videoInfo.title}
                 className="w-48 h-27 object-cover rounded-md"
               />
             </div>
-            
+
             {/* Video Details */}
             <div className="flex-1 space-y-3">
               <h3 className="text-lg font-semibold line-clamp-2">
                 {videoInfo.title}
               </h3>
-              
+
               <div className="flex items-center gap-4 text-sm text-muted-foreground">
                 <div className="flex items-center gap-1">
                   <User className="w-4 h-4" />
@@ -45,15 +45,12 @@ export function LoadingContext({ videoInfo, preview }: LoadingContextProps) {
                 )}
               </div>
 
-              {/* Preview text */}
-              {preview && (
+              {/* Quick Preview */}
+              {preview && preview !== 'Processing video content...' && (
                 <div className="pt-2">
-                  <div className="flex items-start gap-2">
-                    <FileText className="w-4 h-4 text-muted-foreground mt-0.5" />
-                    <p className="text-sm text-muted-foreground leading-relaxed">
-                      {preview}
-                    </p>
-                  </div>
+                  <p className="text-sm text-muted-foreground leading-relaxed">
+                    {preview}
+                  </p>
                 </div>
               )}
             </div>
@@ -66,7 +63,16 @@ export function LoadingContext({ videoInfo, preview }: LoadingContextProps) {
             <div className="flex-1 space-y-3">
               <Skeleton className="h-6 w-3/4" />
               <Skeleton className="h-4 w-1/2" />
-              <Skeleton className="h-16 w-full" />
+              {/* Show preview even without video info */}
+              {preview && preview !== 'Processing video content...' ? (
+                <div className="pt-2">
+                  <p className="text-sm text-muted-foreground leading-relaxed">
+                    {preview}
+                  </p>
+                </div>
+              ) : (
+                <Skeleton className="h-16 w-full" />
+              )}
             </div>
           </div>
         </Card>

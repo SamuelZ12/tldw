@@ -65,3 +65,15 @@ export interface VideoInfo {
   description?: string;
   tags?: string[];
 }
+
+// Playback command types for centralized control
+export type PlaybackCommandType = 'SEEK' | 'PLAY_TOPIC' | 'PLAY_SEGMENT' | 'PLAY' | 'PAUSE' | 'PLAY_ALL' | 'PLAY_CITATIONS';
+
+export interface PlaybackCommand {
+  type: PlaybackCommandType;
+  time?: number;
+  topic?: Topic;
+  segment?: TranscriptSegment;
+  citations?: Citation[];
+  autoPlay?: boolean;
+}

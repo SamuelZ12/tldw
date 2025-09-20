@@ -1,7 +1,9 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { TranscriptSegment } from '@/lib/types';
 import { isValidLanguage } from '@/lib/language-utils';
+import { withSecurity } from '@/lib/security-middleware';
+import { RATE_LIMITS } from '@/lib/rate-limiter';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
@@ -23,7 +25,7 @@ function cleanMarkdownFormatting(content: string): string {
 }
 
 
-export async function POST(request: Request) {
+async function handler(request: NextRequest) {
   try {
     const { transcript, videoInfo, language = 'English' } = await request.json();
     
@@ -180,3 +182,10 @@ Highlight the 1-3 most intriguing and memorable and surprising stories/anecdotes
     );
   }
 }
+
+// Apply security with generation rate limits
+export const POST = withSecurity(handler, {
+  rateLimit: RATE_LIMITS.AUTH_GENERATION, // Use authenticated rate limit
+  maxBodySize: 10 * 1024 * 1024, // 10MB for large transcripts
+  allowedMethods: ['POST']
+});

@@ -1,7 +1,8 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { extractVideoId } from '@/lib/utils';
+import { withSecurity, SECURITY_PRESETS } from '@/lib/security-middleware';
 
-export async function POST(request: Request) {
+async function handler(request: NextRequest) {
   try {
     const { url } = await request.json();
 
@@ -104,3 +105,5 @@ export async function POST(request: Request) {
     );
   }
 }
+
+export const POST = withSecurity(handler, SECURITY_PRESETS.PUBLIC);

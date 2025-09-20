@@ -27,6 +27,7 @@ interface RightColumnTabsProps {
   isGeneratingSummary?: boolean;
   summaryError?: string;
   showSummaryTab?: boolean;
+  cachedSuggestedQuestions?: string[] | null;
 }
 
 export interface RightColumnTabsHandle {
@@ -50,6 +51,7 @@ export const RightColumnTabs = forwardRef<RightColumnTabsHandle, RightColumnTabs
   isGeneratingSummary,
   summaryError,
   showSummaryTab,
+  cachedSuggestedQuestions,
 }, ref) => {
   const [activeTab, setActiveTab] = useState<"transcript" | "chat" | "summary">("summary");
 
@@ -139,6 +141,7 @@ export const RightColumnTabs = forwardRef<RightColumnTabsHandle, RightColumnTabs
             onCitationClick={onCitationClick}
             onTimestampClick={onTimestampClick}
             onPlayAllCitations={onPlayAllCitations}
+            cachedSuggestedQuestions={cachedSuggestedQuestions}
           />
         </div>
         <div className={cn("absolute inset-0", activeTab !== "summary" && "hidden")}>

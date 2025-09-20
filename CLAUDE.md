@@ -10,7 +10,7 @@ TLDW (Too Long; Didn't Watch) is a Next.js 15 application that transforms long Y
 
 ```bash
 npm run dev           # Start development server with Turbopack
-npm run build         # Build production bundle with Turbopack  
+npm run build         # Build production bundle with Turbopack
 npm start            # Start production server
 ```
 
@@ -35,14 +35,32 @@ npm start            # Start production server
 - `/api/suggested-questions`: Generates relevant questions based on video content
 - `/api/quick-preview`: Fast topic preview generation
 - `/api/generate-summary`: Creates comprehensive video summary using Gemini
+- `/api/check-limit`: Validates rate limits for authenticated/anonymous users
+- `/api/check-video-cache`: Checks if video analysis already exists
+- `/api/video-analysis`: Fetches/stores analyzed video data in Supabase
+- `/api/update-video-analysis`: Updates existing video analysis
+- `/api/toggle-favorite`: Manages user video favorites
+- `/api/link-video`: Links video analysis to authenticated user account
 
 ### Key Technical Implementation
-- **Transcript Processing**: Advanced text matching algorithms in `generate-topics/route.ts` including Boyer-Moore search, n-gram similarity, and fuzzy matching
-- **Quote Extraction**: `findExactQuotes()` uses multiple strategies (exact, normalized, fuzzy) to match AI timestamps with actual transcript segments
-- **Segment Merging**: Quotes within 5 seconds are automatically merged to avoid fragmentation
-- **Context Extension**: Extends quote boundaries to capture complete thoughts (15-30 seconds minimum)
-- **Citation System**: Chat responses include timestamped citations that link to video segments
-- **Model Selection**: Supports Gemini 2.5 Flash and 2.0 Flash Thinking models
+
+#### Quote Matching System (`lib/quote-matcher.ts`)
+- **Boyer-Moore Search**: Implements efficient substring search algorithm for exact matching
+- **N-gram Similarity**: Calculates similarity using 3-gram Jaccard coefficient
+- **Transcript Indexing**: Builds comprehensive indices with word positions and n-gram maps
+- **Multi-strategy Matching**: Falls back from exact → normalized → fuzzy matching
+- **Segment Mapping**: Maps text matches back to precise segment boundaries with character offsets
+
+#### Authentication & Account System
+- **Supabase Auth**: User authentication with email/password and OAuth providers
+- **Rate Limiting**: Different limits for anonymous (3 videos/30 min) vs authenticated users
+- **Video Linking**: Post-authentication linking of anonymous analyses to user accounts
+- **Favorites System**: Users can favorite and manage their analyzed videos
+
+#### Timestamp Utilities (`lib/timestamp-utils.ts`)
+- **Parsing**: Handles MM:SS and HH:MM:SS formats with validation
+- **Extraction**: Finds all timestamps in text with context-aware regex
+- **Formatting**: Converts seconds to human-readable timestamp format
 
 ### Component Architecture
 - **State Management**: React hooks in `app/page.tsx` orchestrate the entire flow
@@ -51,6 +69,9 @@ npm start            # Start production server
 - **Transcript Viewer**: Synchronized highlighting with video playback
 - **AI Chat**: Maintains conversation history with citation highlighting
 - **Video Progress Bar**: Visual timeline showing highlight segments
+- **Auth Modal**: User authentication/registration flow
+- **User Menu**: Account management dropdown
+- **Loading Context**: Global loading state management
 
 ### TypeScript Types (`lib/types.ts`)
 - `TranscriptSegment`: Individual transcript segment with timing
@@ -65,11 +86,20 @@ npm start            # Start production server
 - `formatTopicDuration()`: Human-readable duration (e.g., "5 min", "1h 30m")
 - `getTopicColor()`: Assigns consistent colors to highlight reels
 - `getTopicHSLColor()`: Returns HSL color values for dynamic theming
+- `cn()`: Tailwind CSS class merging utility
+
+### Database Integration
+- **Supabase Client**: Browser and server clients for data operations
+- **Tables**: video_analyses, user_favorites, rate_limit_logs
+- **Caching**: Analyzed videos cached to reduce API calls
+- **User Data**: Persistent storage of user-specific analysis history
 
 ### Environment Variables
 Required in `.env.local`:
 - `GEMINI_API_KEY`: Google Gemini API key for AI generation
 - `SUPADATA_API_KEY`: Supadata API key for transcript fetching
+- `NEXT_PUBLIC_SUPABASE_URL`: Supabase project URL
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Supabase anonymous key
 
 ### Deployment
 Optimized for Vercel deployment with Next.js 15 and Turbopack for fast builds and hot module replacement.

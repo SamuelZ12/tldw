@@ -1,6 +1,8 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { TranscriptSegment, Topic } from '@/lib/types';
+import { withSecurity } from '@/lib/security-middleware';
+import { RATE_LIMITS } from '@/lib/rate-limiter';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
@@ -13,7 +15,7 @@ function formatTranscriptForContext(segments: TranscriptSegment[]): string {
   }).join('\n');
 }
 
-export async function POST(request: Request) {
+async function handler(request: NextRequest) {
   try {
     const { transcript, topics, videoTitle } = await request.json();
 
@@ -169,3 +171,10 @@ Return ONLY a JSON array of 3 strings (no markdown, no extra text), e.g.:
     );
   }
 }
+
+// Apply security with generation rate limits
+export const POST = withSecurity(handler, {
+  rateLimit: RATE_LIMITS.AUTH_GENERATION, // Use authenticated rate limit
+  maxBodySize: 10 * 1024 * 1024, // 10MB for large transcripts
+  allowedMethods: ['POST']
+});

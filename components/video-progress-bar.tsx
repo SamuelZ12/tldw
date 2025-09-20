@@ -4,8 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { Topic, TranscriptSegment } from "@/lib/types";
 import { formatDuration, getTopicHSLColor } from "@/lib/utils";
 import { TopicCard } from "@/components/topic-card";
-import { Button } from "@/components/ui/button";
-import { PlayCircle, StopCircle } from "lucide-react";
+import { PlayCircle } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -20,7 +19,7 @@ interface VideoProgressBarProps {
   topics: Topic[];
   selectedTopic: Topic | null;
   onSeek: (time: number) => void;
-  onTopicSelect?: (topic: Topic) => void;
+  onTopicSelect?: (topic: Topic, fromPlayAll?: boolean) => void;
   onPlayTopic?: (topic: Topic) => void;
   transcript?: TranscriptSegment[];
   onPlayAllTopics?: () => void;
@@ -41,33 +40,13 @@ export function VideoProgressBar({
   isPlayingAll = false,
   playAllIndex = 0,
 }: VideoProgressBarProps) {
-  const [hoveredSegment, setHoveredSegment] = useState<{
-    topic: Topic;
-    segment: Topic["segments"][0];
-    x: number;
-  } | null>(null);
+  const [isHoveringBar, setIsHoveringBar] = useState(false);
   const progressBarRef = useRef<HTMLDivElement>(null);
 
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!progressBarRef.current) return;
-    const rect = progressBarRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const percentage = x / rect.width;
-    const time = percentage * videoDuration;
-    onSeek(time);
-  };
-
-  const handleSegmentHover = (
-    topic: Topic,
-    segment: Topic["segments"][0],
-    e: React.MouseEvent<HTMLDivElement>
-  ) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    setHoveredSegment({
-      topic,
-      segment,
-      x: rect.left + rect.width / 2,
-    });
+    // Clicking the bar starts Play All mode
+    e.stopPropagation();
+    onPlayAllTopics?.();
   };
 
   // Calculate topic density heatmap
@@ -110,12 +89,16 @@ export function VideoProgressBar({
   return (
     <TooltipProvider>
       <div className="relative w-full space-y-2">
-        {/* Main progress bar */}
-        <div
-          ref={progressBarRef}
-          className="relative h-12 bg-muted rounded-lg overflow-hidden cursor-pointer group"
-          onClick={handleClick}
-        >
+        {/* Main progress bar - Click to Play All */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div
+              ref={progressBarRef}
+              className="relative h-12 bg-muted rounded-lg overflow-hidden cursor-pointer group transition-all hover:ring-2 hover:ring-primary/50"
+              onClick={handleClick}
+              onMouseEnter={() => setIsHoveringBar(true)}
+              onMouseLeave={() => setIsHoveringBar(false)}
+            >
           {/* Heatmap background */}
           <div className="absolute inset-0 flex">
             {density.map((d, i) => (
@@ -141,8 +124,7 @@ export function VideoProgressBar({
                 <div
                   key={key}
                   className={cn(
-                    "absolute top-2 h-8 rounded-md transition-all cursor-pointer group/segment",
-                    "hover:z-10 hover:scale-y-110",
+                    "absolute top-2 h-8 rounded-md transition-all",
                     isSelected && "z-10 ring-2 ring-white"
                   )}
                   style={{
@@ -150,19 +132,21 @@ export function VideoProgressBar({
                     width: `${widthPercentage}%`,
                     backgroundColor: `hsl(${getTopicHSLColor(topicIndex)})`,
                     opacity: isSelected ? 1 : 0.7,
-                  }}
-                  title={`${topic.title}\n${formatDuration(segment.start)} - ${formatDuration(segment.end)}`}
-                  onMouseEnter={(e) => handleSegmentHover(topic, segment, e)}
-                  onMouseLeave={() => setHoveredSegment(null)}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onSeek(segment.start);
-                    onTopicSelect?.(topic);
+                    pointerEvents: 'none',
                   }}
                 />
               );
             })}
           </div>
+
+          {/* Play All icon indicator on hover */}
+          {isHoveringBar && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
+              <div className="bg-background/90 backdrop-blur-sm rounded-full p-2 shadow-lg animate-in fade-in zoom-in duration-200">
+                <PlayCircle className="h-6 w-6 text-primary" />
+              </div>
+            </div>
+          )}
 
           {/* Current time indicator */}
           <div
@@ -174,35 +158,17 @@ export function VideoProgressBar({
             <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-3 h-3 bg-red-500 rounded-full" />
           </div>
         </div>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p className="flex items-center gap-1">
+              <PlayCircle className="h-3 w-3" />
+              {isPlayingAll ? 'Stop playing highlights' : 'Play all highlights'}
+            </p>
+          </TooltipContent>
+        </Tooltip>
 
-        {/* Play All button and Topic insights list */}
-        <div className="mt-3 space-y-2">
-          {/* Play All Topics button */}
-          {topics.length > 0 && (
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-sm font-medium text-muted-foreground">Highlight Reels</span>
-              <Button
-                size="sm"
-                variant={isPlayingAll ? "destructive" : "outline"}
-                onClick={onPlayAllTopics}
-                className="h-7 px-2 text-xs gap-1"
-              >
-                {isPlayingAll ? (
-                  <>
-                    <StopCircle className="h-3.5 w-3.5" />
-                    Stop
-                  </>
-                ) : (
-                  <>
-                    <PlayCircle className="h-3.5 w-3.5" />
-                    Play All
-                  </>
-                )}
-              </Button>
-            </div>
-          )}
-
-          {/* Topic insights list */}
+        {/* Topic insights list */}
+        <div className="mt-3">
           <div className="space-y-1">
             {topics.map((topic, index) => {
               const isSelected = selectedTopic?.id === topic.id;

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Play } from "lucide-react";
-import { Topic, TranscriptSegment } from "@/lib/types";
+import { Topic, TranscriptSegment, PlaybackCommand, Citation } from "@/lib/types";
 import { formatDuration, getTopicHSLColor } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -14,9 +14,11 @@ interface YouTubePlayerProps {
   videoId: string;
   selectedTopic: Topic | null;
   onTimeUpdate?: (seconds: number) => void;
-  seekToTime?: number;
+  playbackCommand?: PlaybackCommand | null;
+  onCommandExecuted?: () => void;
+  onPlayerReady?: () => void;
   topics?: Topic[];
-  onTopicSelect?: (topic: Topic) => void;
+  onTopicSelect?: (topic: Topic, fromPlayAll?: boolean) => void;
   onPlayTopic?: (topic: Topic) => void;
   transcript?: TranscriptSegment[];
   isPlayingAll?: boolean;
@@ -30,7 +32,9 @@ export function YouTubePlayer({
   videoId,
   selectedTopic,
   onTimeUpdate,
-  seekToTime,
+  playbackCommand,
+  onCommandExecuted,
+  onPlayerReady,
   topics = [],
   onTopicSelect,
   onPlayTopic,
@@ -43,7 +47,6 @@ export function YouTubePlayer({
 }: YouTubePlayerProps) {
   const playerRef = useRef<any>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0);
   const [citationReelSegmentIndex, setCitationReelSegmentIndex] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [videoDuration, setVideoDuration] = useState(0);
@@ -52,8 +55,6 @@ export function YouTubePlayer({
   const timeUpdateIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const isSeekingRef = useRef(false);
   const lastSeekTimeRef = useRef<number | undefined>(undefined);
-  const lastAutoJumpTimeRef = useRef<number>(0);
-  const lastKnownSegmentRef = useRef<number>(-1);
   const isPlayingAllRef = useRef(false);
   const playAllIndexRef = useRef(0);
   const topicsRef = useRef<Topic[]>([]);
@@ -72,15 +73,16 @@ export function YouTubePlayer({
   }, [topics]);
 
   useEffect(() => {
-    // Load YouTube IFrame API
-    const tag = document.createElement("script");
-    tag.src = "https://www.youtube.com/iframe_api";
-    const firstScriptTag = document.getElementsByTagName("script")[0];
-    firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
+    if (!videoId) return;
 
-    // Initialize player when API is ready
-    (window as any).onYouTubeIframeAPIReady = () => {
-      playerRef.current = new (window as any).YT.Player("youtube-player", {
+    let mounted = true;
+    let player: any = null;
+
+    const initializePlayer = () => {
+      // Only create player if component still mounted and no player exists
+      if (!mounted || playerRef.current) return;
+
+      player = new (window as any).YT.Player("youtube-player", {
         videoId: videoId,
         playerVars: {
           autoplay: 0,
@@ -90,36 +92,40 @@ export function YouTubePlayer({
         },
         events: {
           onReady: (event: { target: any }) => {
+            if (!mounted) return;
+            playerRef.current = player;
             setVideoDuration(event.target.getDuration());
             setPlayerReady(true);
+            onPlayerReady?.();
           },
           onStateChange: (event: { data: number; target: any }) => {
+            if (!mounted) return;
             const playing = event.data === 1;
             setIsPlaying(playing);
-            
+
             if (playing) {
               // Start time update interval with throttling
               if (timeUpdateIntervalRef.current) {
                 clearInterval(timeUpdateIntervalRef.current);
               }
-              
+
               let lastUpdateTime = 0;
               timeUpdateIntervalRef.current = setInterval(() => {
                 // Skip updates while seeking to prevent feedback loops
                 if (isSeekingRef.current) return;
-                
+
                 if (playerRef.current?.getCurrentTime) {
                   const time = playerRef.current.getCurrentTime();
-                  
+
                   // Always update internal current time for progress bar
                   setCurrentTime(time);
-                  
+
                   // Handle Play All mode auto-transitions
                   if (isPlayingAllRef.current && topicsRef.current.length > 0) {
                     const currentTopic = topicsRef.current[playAllIndexRef.current];
                     if (currentTopic && currentTopic.segments.length > 0) {
                       const segment = currentTopic.segments[0];
-                      
+
                       // Check if we've reached the end of the current segment
                       if (time >= segment.end) {
                         // Check if this is the last topic
@@ -134,7 +140,7 @@ export function YouTubePlayer({
                       }
                     }
                   }
-                  
+
                   // Throttle external updates to reduce re-renders (update every 500ms instead of 100ms)
                   const timeDiff = Math.abs(time - lastUpdateTime);
                   if (timeDiff >= 0.5) {
@@ -155,53 +161,145 @@ export function YouTubePlayer({
       });
     };
 
-    return () => {
-      setPlayerReady(false);
-      if (playerRef.current) {
-        playerRef.current.destroy();
+    // Check if YouTube API is already loaded
+    if ((window as any).YT && (window as any).YT.Player) {
+      initializePlayer();
+    } else {
+      // Only add script if it doesn't exist
+      if (!document.querySelector('script[src="https://www.youtube.com/iframe_api"]')) {
+        const tag = document.createElement("script");
+        tag.src = "https://www.youtube.com/iframe_api";
+        document.body.appendChild(tag);
       }
+
+      // Set up or use existing callback
+      const existingCallback = (window as any).onYouTubeIframeAPIReady;
+      (window as any).onYouTubeIframeAPIReady = () => {
+        if (existingCallback) existingCallback();
+        if (mounted) initializePlayer();
+      };
+    }
+
+    // Cleanup: Always destroy player if it exists
+    return () => {
+      mounted = false;
+      setPlayerReady(false);
+
+      if (playerRef.current) {
+        try {
+          playerRef.current.destroy();
+        } catch (e) {
+          console.error('Error destroying player:', e);
+        }
+        playerRef.current = null;
+      }
+
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
+        intervalRef.current = null;
       }
+
       if (timeUpdateIntervalRef.current) {
         clearInterval(timeUpdateIntervalRef.current);
+        timeUpdateIntervalRef.current = null;
       }
     };
-  }, [videoId]);
+  }, [videoId]); // Only depend on videoId
 
+  // Centralized command executor
   useEffect(() => {
-    if (seekToTime !== undefined && playerRef.current?.seekTo) {
-      // Prevent seeking to the same position repeatedly
-      if (lastSeekTimeRef.current === seekToTime) return;
-      
-      lastSeekTimeRef.current = seekToTime;
-      isSeekingRef.current = true;
-      
-      playerRef.current.seekTo(seekToTime, true);
-      
-      // Auto-play after seeking (for timestamp clicks)
-      if (playerRef.current?.playVideo) {
-        playerRef.current.playVideo();
+    if (!playbackCommand || !playerRef.current || !playerReady) return;
+
+    const executeCommand = () => {
+      switch (playbackCommand.type) {
+        case 'SEEK':
+          if (playbackCommand.time !== undefined) {
+            playerRef.current.seekTo(playbackCommand.time, true);
+            playerRef.current.playVideo();
+          }
+          break;
+
+        case 'PLAY_TOPIC':
+          if (playbackCommand.topic) {
+            const topic = playbackCommand.topic;
+            onTopicSelect?.(topic);
+            if (topic.segments.length > 0) {
+              playerRef.current.seekTo(topic.segments[0].start, true);
+              if (playbackCommand.autoPlay) {
+                playerRef.current.playVideo();
+              }
+            }
+          }
+          break;
+
+        case 'PLAY_SEGMENT':
+          if (playbackCommand.segment) {
+            playerRef.current.seekTo(playbackCommand.segment.start, true);
+            playerRef.current.playVideo();
+          }
+          break;
+
+        case 'PLAY_CITATIONS':
+          if (playbackCommand.citations && playbackCommand.citations.length > 0) {
+            // Create citation reel topic
+            const citationReel: Topic = {
+              id: `citation-reel-${Date.now()}`,
+              title: "Cited Clips",
+              description: "Playing all clips cited in the AI response",
+              duration: playbackCommand.citations.reduce((total, c) => total + (c.end - c.start), 0),
+              segments: playbackCommand.citations.map(c => ({
+                start: c.start,
+                end: c.end,
+                text: c.text,
+                startSegmentIdx: c.startSegmentIdx,
+                endSegmentIdx: c.endSegmentIdx,
+                startCharOffset: c.startCharOffset,
+                endCharOffset: c.endCharOffset,
+              })),
+              isCitationReel: true,
+              autoPlay: true,
+            };
+            onTopicSelect?.(citationReel);
+            playerRef.current.seekTo(playbackCommand.citations[0].start, true);
+            if (playbackCommand.autoPlay) {
+              playerRef.current.playVideo();
+            }
+          }
+          break;
+
+        case 'PLAY_ALL':
+          if (topics.length > 0) {
+            // Play All state is already set in requestPlayAll
+            // Just select the first topic and start playing
+            onTopicSelect?.(topics[0], true);  // Pass true for fromPlayAll
+            playerRef.current.seekTo(topics[0].segments[0].start, true);
+            if (playbackCommand.autoPlay) {
+              playerRef.current.playVideo();
+            }
+          }
+          break;
+
+        case 'PLAY':
+          playerRef.current.playVideo();
+          break;
+
+        case 'PAUSE':
+          playerRef.current.pauseVideo();
+          break;
       }
-      
-      // Delay time update to avoid feedback loop
-      setTimeout(() => {
-        if (playerRef.current?.getCurrentTime) {
-          const time = playerRef.current.getCurrentTime();
-          setCurrentTime(time);
-          onTimeUpdate?.(time);
-        }
-        isSeekingRef.current = false;
-        lastSeekTimeRef.current = undefined;
-      }, 200);
-    }
-  }, [seekToTime, onTimeUpdate]);
+
+      // Clear command after execution
+      onCommandExecuted?.();
+    };
+
+    // Execute with small delay to ensure player stability
+    const timeoutId = setTimeout(executeCommand, 50);
+    return () => clearTimeout(timeoutId);
+  }, [playbackCommand, playerReady, topics, onCommandExecuted, onTopicSelect, setIsPlayingAll, setPlayAllIndex]);
 
   // Reset segment index when topic changes and auto-play if needed
   useEffect(() => {
-    setCurrentSegmentIndex(0);
     setCitationReelSegmentIndex(0);
-    lastKnownSegmentRef.current = -1;
     // Clear any existing interval
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
@@ -222,13 +320,13 @@ export function YouTubePlayer({
   // State-driven playback effect for Play All mode
   useEffect(() => {
     if (!isPlayingAll || !playerReady || !playerRef.current || topics.length === 0) return;
-    
+
     const currentTopic = topics[playAllIndex];
     if (!currentTopic || currentTopic.segments.length === 0) return;
-    
-    // Select the topic in the UI
-    onTopicSelect?.(currentTopic);
-    
+
+    // Select the topic in the UI (with fromPlayAll flag to prevent state reset)
+    onTopicSelect?.(currentTopic, true);
+
     // Small delay to ensure player is ready
     setTimeout(() => {
       if (playerRef.current?.seekTo && playerRef.current?.playVideo) {
@@ -236,7 +334,6 @@ export function YouTubePlayer({
         const segment = currentTopic.segments[0];
         playerRef.current.seekTo(segment.start, true);
         playerRef.current.playVideo();
-        setCurrentSegmentIndex(0);
       }
     }, 100);
   }, [isPlayingAll, playAllIndex, playerReady]);
@@ -335,7 +432,6 @@ export function YouTubePlayer({
     const segment = topic.segments[0];
     playerRef.current.seekTo(segment.start, true);
     playerRef.current.playVideo();
-    setCurrentSegmentIndex(0);
     
     // Set up monitoring to pause at segment end
     intervalRef.current = setInterval(() => {
@@ -357,40 +453,6 @@ export function YouTubePlayer({
     }, 100); // Check every 100ms
   };
 
-  const playSegments = () => {
-    if (!selectedTopic || !playerRef.current || selectedTopic.segments.length === 0) return;
-    
-    // Clear any existing interval
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-    
-    // Play the single segment
-    const segment = selectedTopic.segments[0];
-    playerRef.current.seekTo(segment.start, true);
-    playerRef.current.playVideo();
-    setCurrentSegmentIndex(0);
-    
-    // Set up monitoring to pause at segment end
-    intervalRef.current = setInterval(() => {
-      if (playerRef.current?.getCurrentTime) {
-        const currentTime = playerRef.current.getCurrentTime();
-        
-        // Check if we've reached or passed the segment end
-        if (currentTime >= segment.end) {
-          // Pause the video
-          playerRef.current.pauseVideo();
-          
-          // Clear the monitoring interval
-          if (intervalRef.current) {
-            clearInterval(intervalRef.current);
-            intervalRef.current = null;
-          }
-        }
-      }
-    }, 100); // Check every 100ms
-  };
 
 
   const handleSeek = (time: number) => {
@@ -398,20 +460,6 @@ export function YouTubePlayer({
     setCurrentTime(time);
   };
 
-  const togglePlayPause = () => {
-    if (isPlaying) {
-      playerRef.current?.pauseVideo();
-    } else {
-      playerRef.current?.playVideo();
-    }
-  };
-
-  const playAllTopics = () => {
-    // Delegate to parent component's handler
-    onTogglePlayAll?.();
-  };
-
-  const selectedTopicIndex = selectedTopic ? topics.findIndex(t => t.id === selectedTopic.id) : -1;
 
   return (
     <div className="w-full">
